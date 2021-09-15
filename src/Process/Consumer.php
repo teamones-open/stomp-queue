@@ -15,7 +15,7 @@
 namespace Webman\Stomp\Process;
 
 use support\bootstrap\Container;
-use Workerman\Stomp\Client as StompClient;
+use Webman\Stomp\StompClient;
 use Webman\Stomp\Client;
 
 /**
@@ -30,11 +30,17 @@ class Consumer
     protected $_consumerDir = '';
 
     /**
+     * @var int
+     */
+    protected $_worker_id = 0;
+
+    /**
      * StompConsumer constructor.
      * @param string $consumer_dir
      */
-    public function __construct($consumer_dir = '')
+    public function __construct($consumer_dir = '', $worker_id = 0)
     {
+        $this->_worker_id = $worker_id;
         $this->_consumerDir = $consumer_dir;
     }
 
@@ -60,7 +66,7 @@ class Consumer
                 $connection_name = $consumer->connection ?? 'default';
                 $queue = $consumer->queue;
                 $ack = $consumer->ack ?? 'auto';
-                $connection = Client::connection($connection_name);
+                $connection = Client::connection($connection_name, $this->_worker_id);
                 $cb = function ($client, $package, $ack) use ($consumer) {
                     \call_user_func([$consumer, 'consume'], $package['body'], $ack, $client);
                 };

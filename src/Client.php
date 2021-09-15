@@ -11,6 +11,7 @@
  * @link      http://www.workerman.net/
  * @license   http://www.opensource.org/licenses/mit-license.php MIT License
  */
+
 namespace Webman\Stomp;
 
 /**
@@ -43,9 +44,9 @@ class Client
      * @param $host
      * @param array $options
      */
-    public function __construct($host, $options = [])
+    public function __construct($host, $options = [], $workerId = 0)
     {
-        $this->_client = new StompClient($host, $options);
+        $this->_client = new StompClient($host, $options, $workerId);
         $this->_client->onConnect = function ($client) {
             foreach ($this->_queue as $item) {
                 $client->{$item[0]}(... $item[1]);
@@ -83,7 +84,8 @@ class Client
      * @param string $name
      * @return Client
      */
-    public static function connection($name = 'default') {
+    public static function connection($name = 'default', $workerId = 0)
+    {
         if (!isset(static::$_connections[$name])) {
             $config = config('stomp', []);
             if (!isset($config[$name])) {
@@ -91,7 +93,7 @@ class Client
             }
             $host = $config[$name]['host'];
             $options = $config[$name]['options'];
-            $client = new static($host, $options);
+            $client = new static($host, $options, $workerId);
             static::$_connections[$name] = $client;
         }
         return static::$_connections[$name];

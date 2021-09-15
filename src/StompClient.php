@@ -15,30 +15,55 @@
 namespace Webman\Stomp;
 
 use Workerman\Stomp\Client;
+use Robin\SmoothWeightedRobin;
 
 class StompClient extends Client
 {
 
     public $queuePrefix = "";
 
-    public function __construct($address, $options = [])
+    public $workerId = 0;
+
+    /**
+     * @var SmoothWeightedRobin|null
+     */
+    public $robin = null;
+
+    public function __construct($address, $options = [], $workerId = 0)
     {
         parent::__construct($address, $options);
 
+        $this->workerId = $workerId;
         $config = config('stomp', []);
         $exchangeName = $config['default']['amqp']['exchange'];
 
         $this->queuePrefix = !empty(config("belong_system")) ? "/exchange/{$exchangeName}/" . config("belong_system") . "_" : "/exchange/{$exchangeName}/";
+
+        $this->robin = new \Robin\SmoothWeightedRobin();
+        $this->robin->init($this->getWorkers());
+    }
+
+    /**
+     * 获取worker列表
+     */
+    protected function getWorkers()
+    {
+        $config = config('process', []);
+        $nodes = [];
+        if (!empty($config['stomp_consumer']['count'])) {
+            for ($i = 0; $i < $config['stomp_consumer']['count']; $i++) {
+                $nodes[$i] = 1;
+            }
+        }
+        return $nodes;
     }
 
     /**
      * subscribe
-     *
      * @param $destination
      * @param callable $callback
      * @param array $headers
-     *
-     * @return string
+     * @return false|mixed|string
      */
     public function subscribe($destination, $callback, array $headers = [])
     {
@@ -49,8 +74,8 @@ class StompClient extends Client
         $headers['id'] = isset($headers['id']) ? $headers['id'] : $this->createClientId();
         $headers['ack'] = isset($headers['ack']) ? $headers['ack'] : 'auto';
         $subscription = $headers['id'];
-        $headers['destination'] = $this->queuePrefix . $destination;
-        $headers['auto-delete'] = "false";
+        $headers['destination'] = $this->queuePrefix . $destination . '-p' . $this->workerId;
+        # $headers['auto-delete'] = "false";
 
         $package = [
             'cmd' => 'SUBSCRIBE',
@@ -95,10 +120,12 @@ class StompClient extends Client
             $headers['x-delay'] = $delay * 1000;
         }
 
-        $headers['destination'] = $this->queuePrefix . $destination;
+        $workerId = "-p" . $this->robin->next();
+
+        $headers['destination'] = $this->queuePrefix . $destination . $workerId;
         $headers['content-length'] = strlen($body);
         if (!isset($headers['content-type'])) {
-            $headers['content-type'] = 'text/plain';
+            $headers['content - type'] = 'text / plain';
         }
 
         $package = [

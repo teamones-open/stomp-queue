@@ -12,7 +12,7 @@ return [
         'amqp' => [
             'host' => env("amqp_host", ''),
             'port' => env("amqp_port", ''),
-            'exchange' => env("belong_system", '') . '_delayed_exchange'
+            'exchange' => env("belong_system", '') . '_delayed_exchange-' . Webpatser\Uuid\Uuid::generate()->string
         ]
     ]
 ];

@@ -38,7 +38,7 @@ class Exchange
 
 
         $channel = $connection->channel();
-        $channel->exchange_declare($amqp['exchange'], 'x-delayed-message', false, true, false, false, false, new AMQPTable(array(
+        $channel->exchange_declare($amqp['exchange'], 'x-delayed-message', false, true, true, false, false, new AMQPTable(array(
             'x-delayed-type' => AMQPExchangeType::DIRECT
         )));
 
