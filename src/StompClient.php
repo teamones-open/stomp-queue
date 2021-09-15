@@ -24,7 +24,11 @@ class StompClient extends Client
     public function __construct($address, $options = [])
     {
         parent::__construct($address, $options);
-        $this->queuePrefix = !empty(config("belong_system")) ? config("belong_system") . "_" : "";
+
+        $config = config('stomp', []);
+        $exchangeName = $config['default']['amqp']['exchange'];
+
+        $this->queuePrefix = !empty(config("belong_system")) ? "/exchange/{$exchangeName}/".config("belong_system") . "_" : "/exchange/{$exchangeName}/";
     }
 
     /**
@@ -46,6 +50,7 @@ class StompClient extends Client
         $headers['ack'] = isset($headers['ack']) ? $headers['ack'] : 'auto';
         $subscription = $headers['id'];
         $headers['destination'] = $this->queuePrefix.$destination;
+        $headers['auto-delete'] = "false";
 
         $package = [
             'cmd' => 'SUBSCRIBE',
