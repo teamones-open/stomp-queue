@@ -59,7 +59,7 @@ class Consumer
                 $consumer = Container::get($class);
                 $connection_name = $consumer->connection ?? 'default';
                 $queue = $consumer->queue;
-                $ack   = $consumer->ack ?? 'auto';
+                $ack = $consumer->ack ?? 'auto';
                 $connection = Client::connection($connection_name);
                 $cb = function ($client, $package, $ack) use ($consumer) {
                     \call_user_func([$consumer, 'consume'], $package['body'], $ack, $client);

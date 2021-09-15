@@ -13,8 +13,6 @@
  */
 namespace Webman\Stomp;
 
-use Workerman\Stomp\Client as StompClient;
-
 /**
  * Class Stomp
  * @package support
