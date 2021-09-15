@@ -18,7 +18,7 @@ namespace Webman\Stomp;
  * @package support
  *
  * Strings methods
- * @method static void send($queue, $body, array $headers = [])
+ * @method static void send($queue, $body, int $delay = 0, array $headers = [])
  */
 class Client
 {

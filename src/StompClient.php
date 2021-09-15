@@ -28,7 +28,7 @@ class StompClient extends Client
         $config = config('stomp', []);
         $exchangeName = $config['default']['amqp']['exchange'];
 
-        $this->queuePrefix = !empty(config("belong_system")) ? "/exchange/{$exchangeName}/".config("belong_system") . "_" : "/exchange/{$exchangeName}/";
+        $this->queuePrefix = !empty(config("belong_system")) ? "/exchange/{$exchangeName}/" . config("belong_system") . "_" : "/exchange/{$exchangeName}/";
     }
 
     /**
@@ -49,7 +49,7 @@ class StompClient extends Client
         $headers['id'] = isset($headers['id']) ? $headers['id'] : $this->createClientId();
         $headers['ack'] = isset($headers['ack']) ? $headers['ack'] : 'auto';
         $subscription = $headers['id'];
-        $headers['destination'] = $this->queuePrefix.$destination;
+        $headers['destination'] = $this->queuePrefix . $destination;
         $headers['auto-delete'] = "false";
 
         $package = [
@@ -63,7 +63,7 @@ class StompClient extends Client
             'ack' => $headers['ack'],
             'callback' => $callback,
             'headers' => $raw_headers,
-            'destination' => $this->queuePrefix.$destination,
+            'destination' => $this->queuePrefix . $destination,
         ];
         return $subscription;
     }
@@ -80,17 +80,22 @@ class StompClient extends Client
         if (!isset($headers['ack']) || $headers['ack'] === 'auto') {
             $headers['ack'] = 'client';
         }
-        return $this->subscribe($this->queuePrefix.$destination, $callback, $headers);
+        return $this->subscribe($this->queuePrefix . $destination, $callback, $headers);
     }
 
     /**
      * @param $destination
      * @param $body
+     * @param int $delay 单位是秒
      * @param array $headers
      */
-    public function send($destination, $body, array $headers = [])
+    public function send($destination, $body, $delay = 0, array $headers = [])
     {
-        $headers['destination'] = $this->queuePrefix.$destination;
+        if ($delay > 0) {
+            $headers['x-delay'] = $delay * 1000;
+        }
+
+        $headers['destination'] = $this->queuePrefix . $destination;
         $headers['content-length'] = strlen($body);
         if (!isset($headers['content-type'])) {
             $headers['content-type'] = 'text/plain';
