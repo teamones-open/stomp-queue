@@ -125,7 +125,7 @@ class StompClient extends Client
         $headers['destination'] = $this->queuePrefix . $destination . $workerId;
         $headers['content-length'] = strlen($body);
         if (!isset($headers['content-type'])) {
-            $headers['content - type'] = 'text / plain';
+            $headers['content-type'] = 'text/plain';
         }
 
         $package = [
