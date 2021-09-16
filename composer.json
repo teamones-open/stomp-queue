@@ -6,6 +6,8 @@
     "php-amqplib/php-amqplib": "^3.0"
   },
   "autoload": {
-    "psr-4": {"Webman\\Stomp\\": "./src"}
+    "psr-4": {
+      "Webman\\Stomp\\": "./src"
+    }
   }
 }

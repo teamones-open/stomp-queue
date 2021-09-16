@@ -23,18 +23,15 @@ class StompClient extends Client
 
     public $exchangeName = "";
 
-    public $workerId = 0;
-
     /**
      * @var SmoothWeightedRobin|null
      */
     public $robin = null;
 
-    public function __construct($address, $options = [], $workerId = 0)
+    public function __construct($address, $options = [])
     {
         parent::__construct($address, $options);
 
-        $this->workerId = $workerId;
         $config = config('stomp', []);
         $preFix = !empty(config("belong_system")) ? config("belong_system") . "." : "";
         $this->queuePrefix = "/amq/queue/" . $preFix;
@@ -55,8 +52,8 @@ class StompClient extends Client
             return false;
         }
         $raw_headers = $headers;
-        $headers['id'] = isset($headers['id']) ? $headers['id'] : $this->createClientId();
-        $headers['ack'] = isset($headers['ack']) ? $headers['ack'] : 'auto';
+        $headers['id'] = $headers['id'] ?? $this->createClientId();
+        $headers['ack'] = $headers['ack'] ?? 'auto';
         $subscription = $headers['id'];
         $headers['destination'] = $this->queuePrefix . $destination;
 

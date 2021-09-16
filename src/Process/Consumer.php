@@ -31,17 +31,11 @@ class Consumer
     protected $_consumerDir = '';
 
     /**
-     * @var int
-     */
-    protected $_worker_id = 0;
-
-    /**
      * StompConsumer constructor.
      * @param string $consumer_dir
      */
-    public function __construct($consumer_dir = '', $worker_id = 0)
+    public function __construct($consumer_dir = '')
     {
-        $this->_worker_id = $worker_id;
         $this->_consumerDir = $consumer_dir;
     }
 
@@ -75,7 +69,7 @@ class Consumer
 
                 $amqpInstance::bindQueue($queue);
 
-                $connection = Client::connection($connection_name, $this->_worker_id);
+                $connection = Client::connection($connection_name);
                 $cb = function ($client, $package, $ack) use ($consumer) {
                     \call_user_func([$consumer, 'consume'], $package['body'], $ack, $client);
                 };

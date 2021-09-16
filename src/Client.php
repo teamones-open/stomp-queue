@@ -44,9 +44,9 @@ class Client
      * @param $host
      * @param array $options
      */
-    public function __construct($host, $options = [], $workerId = 0)
+    public function __construct($host, $options = [])
     {
-        $this->_client = new StompClient($host, $options, $workerId);
+        $this->_client = new StompClient($host, $options);
         $this->_client->onConnect = function ($client) {
             foreach ($this->_queue as $item) {
                 $client->{$item[0]}(... $item[1]);
@@ -84,7 +84,7 @@ class Client
      * @param string $name
      * @return Client
      */
-    public static function connection($name = 'default', $workerId = 0)
+    public static function connection($name = 'default')
     {
         if (!isset(static::$_connections[$name])) {
             $config = config('stomp', []);
@@ -93,7 +93,7 @@ class Client
             }
             $host = $config[$name]['host'];
             $options = $config[$name]['options'];
-            $client = new static($host, $options, $workerId);
+            $client = new static($host, $options);
             static::$_connections[$name] = $client;
         }
         return static::$_connections[$name];
