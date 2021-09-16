@@ -17,6 +17,7 @@ namespace Webman\Stomp\Process;
 use support\bootstrap\Container;
 use Webman\Stomp\StompClient;
 use Webman\Stomp\Client;
+use Webman\Stomp\AmqpLib\Instance;
 
 /**
  * Class StompConsumer
@@ -51,6 +52,11 @@ class Consumer
     {
         $dir_iterator = new \RecursiveDirectoryIterator($this->_consumerDir);
         $iterator = new \RecursiveIteratorIterator($dir_iterator);
+
+        // 1. 创建队列
+        $amqpInstance = Instance::connection();
+        $amqpInstance::createDelayedExchange();
+
         foreach ($iterator as $file) {
             if (is_dir($file)) {
                 continue;
@@ -66,6 +72,9 @@ class Consumer
                 $connection_name = $consumer->connection ?? 'default';
                 $queue = $consumer->queue;
                 $ack = $consumer->ack ?? 'auto';
+
+                $amqpInstance::bindQueue($queue);
+
                 $connection = Client::connection($connection_name, $this->_worker_id);
                 $cb = function ($client, $package, $ack) use ($consumer) {
                     \call_user_func([$consumer, 'consume'], $package['body'], $ack, $client);
@@ -81,5 +90,6 @@ class Consumer
             }
         }
 
+        $amqpInstance::close();
     }
 }

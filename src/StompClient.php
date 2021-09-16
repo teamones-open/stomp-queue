@@ -15,12 +15,13 @@
 namespace Webman\Stomp;
 
 use Workerman\Stomp\Client;
-use Robin\SmoothWeightedRobin;
 
 class StompClient extends Client
 {
 
     public $queuePrefix = "";
+
+    public $exchangeName = "";
 
     public $workerId = 0;
 
@@ -35,27 +36,10 @@ class StompClient extends Client
 
         $this->workerId = $workerId;
         $config = config('stomp', []);
-        $exchangeName = $config['default']['amqp']['exchange'];
-
-        $this->queuePrefix = !empty(config("belong_system")) ? "/exchange/{$exchangeName}/" . config("belong_system") . "_" : "/exchange/{$exchangeName}/";
-
-        $this->robin = new \Robin\SmoothWeightedRobin();
-        $this->robin->init($this->getWorkers());
-    }
-
-    /**
-     * 获取worker列表
-     */
-    protected function getWorkers()
-    {
-        $config = config('process', []);
-        $nodes = [];
-        if (!empty($config['stomp_consumer']['count'])) {
-            for ($i = 0; $i < $config['stomp_consumer']['count']; $i++) {
-                $nodes[$i] = 1;
-            }
-        }
-        return $nodes;
+        $preFix = !empty(config("belong_system")) ? config("belong_system") . "." : "";
+        $this->queuePrefix = "/amq/queue/" . $preFix;
+        $exchangeName = $preFix . $config['default']['amqp']['exchange'];
+        $this->exchangeName = "/exchange/{$exchangeName}/{$preFix}";
     }
 
     /**
@@ -74,8 +58,7 @@ class StompClient extends Client
         $headers['id'] = isset($headers['id']) ? $headers['id'] : $this->createClientId();
         $headers['ack'] = isset($headers['ack']) ? $headers['ack'] : 'auto';
         $subscription = $headers['id'];
-        $headers['destination'] = $this->queuePrefix . $destination . '-p' . $this->workerId;
-        # $headers['auto-delete'] = "false";
+        $headers['destination'] = $this->queuePrefix . $destination;
 
         $package = [
             'cmd' => 'SUBSCRIBE',
@@ -120,9 +103,8 @@ class StompClient extends Client
             $headers['x-delay'] = $delay * 1000;
         }
 
-        $workerId = "-p" . $this->robin->next();
+        $headers['destination'] = $this->exchangeName . $destination;
 
-        $headers['destination'] = $this->queuePrefix . $destination . $workerId;
         $headers['content-length'] = strlen($body);
         if (!isset($headers['content-type'])) {
             $headers['content-type'] = 'text/plain';
@@ -133,6 +115,8 @@ class StompClient extends Client
             'headers' => $headers,
             'body' => $body
         ];
+
+        //var_dump($package);
 
         $this->sendPackage($package);
     }
