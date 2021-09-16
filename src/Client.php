@@ -14,12 +14,15 @@
 
 namespace Webman\Stomp;
 
+use Webman\Stomp\AmqpLib\Enforcer;
+
 /**
  * Class Stomp
  * @package support
  *
  * Strings methods
- * @method static void send($queue, $body, int $delay = 0, array $headers = [])
+ * @method static mixed subscribe(string $queueName, callback $callback, array $headers = [])
+ * @method static void send(string $queueName, $body, int $delay = 0, array $headers = [])
  */
 class Client
 {
@@ -39,14 +42,15 @@ class Client
      */
     protected $_client;
 
+
     /**
-     * Client constructor.
-     * @param $host
-     * @param array $options
+     * @param $name
+     * @param array $config
      */
-    public function __construct($host, $options = [])
+    public function __construct($name, $config = [])
     {
-        $this->_client = new StompClient($host, $options);
+        $this->_client = new StompClient($config['host'], $config);
+        $this->_client->_configName = $name;
         $this->_client->onConnect = function ($client) {
             foreach ($this->_queue as $item) {
                 $client->{$item[0]}(... $item[1]);
@@ -74,6 +78,10 @@ class Client
                 'nack',
                 'disconnect'])) {
                 $this->_queue[] = [$name, $arguments];
+
+                if ($name === 'send' && empty(Enforcer::$_queueBelongto[$arguments[0]])) {
+                    Enforcer::$_queueBelongto[$arguments[0]] = $this->_client->_configName;
+                }
                 return null;
             }
         }
@@ -87,13 +95,17 @@ class Client
     public static function connection($name = 'default')
     {
         if (!isset(static::$_connections[$name])) {
+
             $config = config('stomp', []);
             if (!isset($config[$name])) {
-                throw new \RuntimeException("RedisQueue connection $name not found");
+                throw new \RuntimeException("Stomp Queue connection $name not found");
             }
-            $host = $config[$name]['host'];
-            $options = $config[$name]['options'];
-            $client = new static($host, $options);
+
+            if (!isset(Enforcer::$_stompConfig[$name])) {
+                Enforcer::initConfig($name, $config[$name]);
+            }
+
+            $client = new static($name, Enforcer::$_stompConfig[$name]);
             static::$_connections[$name] = $client;
         }
         return static::$_connections[$name];

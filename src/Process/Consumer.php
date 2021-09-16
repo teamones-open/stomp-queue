@@ -15,9 +15,8 @@
 namespace Webman\Stomp\Process;
 
 use support\bootstrap\Container;
-use Webman\Stomp\StompClient;
 use Webman\Stomp\Client;
-use Webman\Stomp\AmqpLib\Instance;
+use Webman\Stomp\AmqpLib\Enforcer;
 
 /**
  * Class StompConsumer
@@ -41,16 +40,16 @@ class Consumer
 
     /**
      * onWorkerStart.
+     * @throws \Exception
      */
     public function onWorkerStart()
     {
         $dir_iterator = new \RecursiveDirectoryIterator($this->_consumerDir);
         $iterator = new \RecursiveIteratorIterator($dir_iterator);
 
-        // 1. 创建队列
-        $amqpInstance = Instance::connection();
-        $amqpInstance::createDelayedExchange();
 
+        // Get consumers by connection name
+        $connectionList = [];
         foreach ($iterator as $file) {
             if (is_dir($file)) {
                 continue;
@@ -63,27 +62,34 @@ class Consumer
                     continue;
                 }
                 $consumer = Container::get($class);
-                $connection_name = $consumer->connection ?? 'default';
+                $connectionName = $consumer->connection ?? 'default';
+                $connectionList[$connectionName][] = $consumer;
+            }
+        }
+
+        // create custom exchange by php-amqplib/php-amqplib
+        foreach ($connectionList as $connectionName => $consumers) {
+            $amqpEnforcer = Enforcer::connection($connectionName);
+            $amqpEnforcer::createDelayedExchange($connectionName);
+
+            foreach ($consumers as $consumer) {
                 $queue = $consumer->queue;
                 $ack = $consumer->ack ?? 'auto';
 
-                $amqpInstance::bindQueue($queue);
+                // create and bind queue
+                $amqpEnforcer::createAndBindQueue($connectionName, $queue);
 
-                $connection = Client::connection($connection_name);
+                $connection = Client::connection($connectionName);
                 $cb = function ($client, $package, $ack) use ($consumer) {
                     \call_user_func([$consumer, 'consume'], $package['body'], $ack, $client);
                 };
                 $connection->subscribe($queue, $cb, ['ack' => $ack]);
-                /*if ($connection->getState() == StompClient::STATE_ESTABLISHED) {
-                    $connection->subscribe($queue, $cb, ['ack' => $ack]);
-                } else {
-                    $connection->onConnect = function (Client $connection) use ($queue, $ack, $cb) {
-                        $connection->subscribe($queue, $cb, ['ack' => $ack]);
-                    };
-                }*/
             }
+            
+            // destroy current amqp connection
+            $amqpEnforcer::destroy($connectionName);
         }
 
-        $amqpInstance::close();
+        unset($connectionList);
     }
 }
