@@ -71,13 +71,7 @@ class StompClient extends Client
         $headers['ack'] = $headers['ack'] ?? 'auto';
         $subscription = $headers['id'];
 
-        // generate destination
-        $configName = Enforcer::$_queueBelongto[$queueName];
-        if (empty($configName)) {
-            return false;
-        }
-
-        $destination = $this->getQueuePath(Enforcer::$_namespace[$configName], $queueName);
+        $destination = $this->getQueuePath(Enforcer::$_namespace[$this->_configName], $queueName);
 
         $headers['destination'] = $destination;
 
@@ -110,13 +104,7 @@ class StompClient extends Client
             $headers['ack'] = 'client';
         }
 
-        // generate destination
-        $configName = Enforcer::$_queueBelongto[$queueName];
-        if (empty($configName)) {
-            return false;
-        }
-
-        $destination = $this->getQueuePath(Enforcer::$_namespace[$configName], $queueName);
+        $destination = $this->getQueuePath(Enforcer::$_namespace[$this->_configName], $queueName);
 
         return $this->subscribe($destination, $callback, $headers);
     }
@@ -130,16 +118,11 @@ class StompClient extends Client
     public function send($queueName, $body, $delay = 0, array $headers = [])
     {
         // generate destination
-        $configName = Enforcer::$_queueBelongto[$queueName];
-        if (empty($configName)) {
-            return false;
-        }
-
         if ($delay > 0) {
             $headers['x-delay'] = $delay * 1000;
         }
 
-        $headers['destination'] = $this->getExchangePath($configName, $queueName);
+        $headers['destination'] = $this->getExchangePath($this->_configName, $queueName);
 
         $headers['content-length'] = strlen($body);
         if (!isset($headers['content-type'])) {

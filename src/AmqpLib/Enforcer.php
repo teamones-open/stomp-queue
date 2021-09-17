@@ -53,11 +53,6 @@ class Enforcer
      */
     public static $_amqpConfig = [];
 
-    /**
-     * @var array
-     */
-    public static $_queueBelongto = [];
-
 
     /**
      * @param $config
@@ -212,7 +207,7 @@ class Enforcer
             return false;
         }
 
-        // create queue
+        // 创建队列
         self::$_channel->queue_declare(
             self::$_namespace[$name] . '.' . $queueName,
             false,
@@ -223,15 +218,12 @@ class Enforcer
             new AMQPTable([])
         );
 
-        // queue bind exchange
+        // 绑定队列
         self::$_channel->queue_bind(
             self::$_namespace[$name] . '.' . $queueName,
             self::$_namespace[$name] . '.' . self::$_amqpConfig[$name]['exchange_name'],
             self::$_namespace[$name] . '.' . $queueName
         );
-
-        // record queue belong config
-        self::$_queueBelongto[$queueName] = $name;
     }
 
     /**
