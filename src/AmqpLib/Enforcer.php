@@ -207,7 +207,7 @@ class Enforcer
             return false;
         }
 
-        // 创建队列
+        // create queue
         self::$_channel->queue_declare(
             self::$_namespace[$name] . '.' . $queueName,
             false,
@@ -218,7 +218,7 @@ class Enforcer
             new AMQPTable([])
         );
 
-        // 绑定队列
+        // queue bind exchange
         self::$_channel->queue_bind(
             self::$_namespace[$name] . '.' . $queueName,
             self::$_namespace[$name] . '.' . self::$_amqpConfig[$name]['exchange_name'],
