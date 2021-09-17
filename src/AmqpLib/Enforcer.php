@@ -53,11 +53,6 @@ class Enforcer
      */
     public static $_amqpConfig = [];
 
-    /**
-     * @var array
-     */
-    public static $_queueBelongto = [];
-
 
     /**
      * @param $config
@@ -229,9 +224,6 @@ class Enforcer
             self::$_namespace[$name] . '.' . self::$_amqpConfig[$name]['exchange_name'],
             self::$_namespace[$name] . '.' . $queueName
         );
-
-        // record queue belong config
-        self::$_queueBelongto[$queueName] = $name;
     }
 
     /**

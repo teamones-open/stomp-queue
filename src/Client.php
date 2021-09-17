@@ -78,10 +78,7 @@ class Client
                 'nack',
                 'disconnect'])) {
                 $this->_queue[] = [$name, $arguments];
-
-                if ($name === 'send' && empty(Enforcer::$_queueBelongto[$arguments[0]])) {
-                    Enforcer::$_queueBelongto[$arguments[0]] = $this->_client->_configName;
-                }
+                
                 return null;
             }
         }
