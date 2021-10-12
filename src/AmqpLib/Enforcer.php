@@ -97,7 +97,12 @@ class Enforcer
 
         if (!empty($config['options'])) {
             foreach (['vhost', 'login', 'passcode', 'debug'] as $optionKey) {
-                if (!empty($config['options'][$optionKey])) {
+                if (
+                    array_key_exists($optionKey, $config['options'])
+                    && (
+                        $config['options'][$optionKey] === false || !empty($config['options'][$optionKey])
+                    )
+                ) {
                     $stompConfig[$optionKey] = $config['options'][$optionKey];
                     if (in_array($optionKey, ['vhost', 'login', 'passcode'])) {
                         $amqpConfig[$optionKey] = $config['options'][$optionKey];
