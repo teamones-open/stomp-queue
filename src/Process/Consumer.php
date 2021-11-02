@@ -14,7 +14,7 @@
 
 namespace Webman\Stomp\Process;
 
-use support\bootstrap\Container;
+use http\Exception\RuntimeException;
 use Webman\Stomp\Client;
 use Webman\Stomp\AmqpLib\Enforcer;
 
@@ -61,7 +61,16 @@ class Consumer
                 if (!is_a($class, 'Webman\Stomp\Consumer', true)) {
                     continue;
                 }
-                $consumer = Container::get($class);
+                if (class_exists("support\bootstrap\Container")) {
+                    // 兼容老版文件位置
+                    $consumer = \support\bootstrap\Container::get($class);
+                } elseif (class_exists("support\Container")) {
+                    // 新版webman移动了文件位置
+                    $consumer = \support\Container::get($class);
+                } else {
+                    throw new RuntimeException('Container file not find.');
+                }
+
                 $connectionName = $consumer->connection ?? 'default';
                 $connectionList[$connectionName][] = $consumer;
             }
@@ -85,7 +94,7 @@ class Consumer
                 };
                 $connection->subscribe($queue, $cb, ['ack' => $ack]);
             }
-            
+
             // destroy current amqp connection
             $amqpEnforcer::destroy($connectionName);
         }
