@@ -17,6 +17,7 @@ namespace Webman\Stomp\Process;
 use http\Exception\RuntimeException;
 use Webman\Stomp\Client;
 use Webman\Stomp\AmqpLib\Enforcer;
+use Webman\Stomp\RetryAbleConsumer;
 
 /**
  * Class StompConsumer
@@ -90,7 +91,24 @@ class Consumer
 
                 $connection = Client::connection($connectionName);
                 $cb = function ($client, $package, $ack) use ($consumer) {
-                    \call_user_func([$consumer, 'consume'], $package['body'], $ack, $client);
+                    try {
+                        \call_user_func([$consumer, 'consume'], $package['body'], $ack, $client);
+                    } catch (\Throwable $e) {
+                        if ($consumer instanceof RetryAbleConsumer) {
+                            if ($consumer->ack === 'client') {
+                                // 先ack掉当前的消息
+                                $ack->ack();
+                            }
+                            $attempt = $package['headers']['attempt-times'] ?? 0;
+                            // 查看是否能重新消费
+                            if ($consumer->canRetry($attempt, $e)) {
+                                // 重新投递消息
+                                $client->send($consumer->queue, $package['body'], $consumer->getTtr(), ['attempt-times' => $attempt + 1]);
+                            }
+                        } else {
+                            throw $e;
+                        }
+                    }
                 };
                 $connection->subscribe($queue, $cb, ['ack' => $ack]);
             }
