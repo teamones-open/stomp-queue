@@ -71,6 +71,8 @@ class StompClient extends Client
         $headers['ack'] = $headers['ack'] ?? 'auto';
         $subscription = $headers['id'];
 
+        // 处理 queueName重复生成的问题 当stomp连接断开reconnect的时候 destination会重复生成
+        $raw_headers['short_name'] = $queueName = $headers['short_name'] ?? $queueName;
         $destination = $this->getQueuePath(Enforcer::$_namespace[$this->_configName], $queueName);
 
         $headers['destination'] = $destination;
