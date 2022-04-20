@@ -52,6 +52,10 @@ class Enforcer
      */
     public static $_amqpConfig = [];
 
+    /** @var string[] option允许写入的键 */
+    protected static $optionsAllowKey = [
+        'vhost', 'login', 'passcode', 'bindto', 'ssl', 'connect_timeout', 'reconnect_period', 'debug', 'heart_beat'
+    ];
 
     /**
      * @param $config
@@ -95,7 +99,7 @@ class Enforcer
         }
 
         if (!empty($config['options'])) {
-            foreach (['vhost', 'login', 'passcode', 'debug'] as $optionKey) {
+            foreach (self::$optionsAllowKey as $optionKey) {
                 if (
                     array_key_exists($optionKey, $config['options'])
                     && (
