@@ -1,5 +1,5 @@
 {
-  "name": "teamones/stomp-queue",
+  "name": "xianghua_we/stomp-queue",
   "description": "Stomp client written in PHP for webman.",
   "require": {
     "workerman/stomp": "^1.0",
