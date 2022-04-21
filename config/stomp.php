@@ -8,6 +8,7 @@ return [
             'login' => env("rabbitmq_user", 'guest'),
             'passcode' => env("rabbitmq_password", 'guest'),
             'debug' => (bool)env("app_debug", false),
+            'heart_beat' => [10000, 10000]
         ],
         'amqp' => [
             'host' => env("rabbitmq_host", '127.0.0.1'),
