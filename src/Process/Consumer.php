@@ -110,7 +110,7 @@ class Consumer
                         }
                     }
                 };
-                $connection->subscribe($queue, $cb, ['ack' => $ack]);
+                $connection->subscribe($queue, $cb, ['ack' => $ack, 'prefetch-count' => 10]);
             }
 
             // destroy current amqp connection
