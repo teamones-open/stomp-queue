@@ -52,6 +52,21 @@ class Enforcer
      */
     public static $_amqpConfig = [];
 
+    /**
+     * option允许写入的键
+     * @var string[]
+     */
+    protected static $optionsAllowKey = [
+        'vhost', 'login', 'passcode', 'bindto', 'ssl', 'connect_timeout', 'reconnect_period', 'debug', 'heart_beat'
+    ];
+
+    /**
+     * 必传配置
+     * @var string[]
+     */
+    protected static $stompOptionRequired = [
+        'vhost', 'login', 'passcode', 'debug',
+    ];
 
     /**
      * @param $config
@@ -95,19 +110,21 @@ class Enforcer
         }
 
         if (!empty($config['options'])) {
-            foreach (['vhost', 'login', 'passcode', 'debug'] as $optionKey) {
+            foreach (self::$optionsAllowKey as $optionKey) {
                 if (
-                    array_key_exists($optionKey, $config['options'])
-                    && (
-                        $config['options'][$optionKey] === false || !empty($config['options'][$optionKey])
-                    )
+                    in_array($optionKey, self::$stompOptionRequired)
+                    && !array_key_exists($optionKey, $config['options'])
                 ) {
+                    // 必传配置没传检查
+                    throw new \RuntimeException("Stomp options {$optionKey} config does not exist");
+                } else if (!isset($config['options'][$optionKey])) {
+                    // 配置没传
+                    continue;
+                } else {
                     $stompConfig[$optionKey] = $config['options'][$optionKey];
                     if (in_array($optionKey, ['vhost', 'login', 'passcode'])) {
                         $amqpConfig[$optionKey] = $config['options'][$optionKey];
                     }
-                } else {
-                    throw new \RuntimeException("Stomp options {$optionKey} config does not exist");
                 }
             }
         } else {
