@@ -103,57 +103,57 @@ class Enforcer
         // amqp config
         $amqpConfig = [];
 
-        if (!empty($config['host'])) {
-            $stompConfig['host'] = $config['host'];
-        } else {
+        if (empty($config['host'])) {
             throw new \RuntimeException("Stomp host config does not exist");
         }
+        $stompConfig['host'] = $config['host'];
 
-        if (!empty($config['options'])) {
-            foreach (self::$optionsAllowKey as $optionKey) {
-                if (
-                    in_array($optionKey, self::$stompOptionRequired)
-                    && !array_key_exists($optionKey, $config['options'])
-                ) {
-                    // 必传配置没传检查
-                    throw new \RuntimeException("Stomp options {$optionKey} config does not exist");
-                } else if (!isset($config['options'][$optionKey])) {
-                    // 配置没传
-                    continue;
-                } else {
-                    $stompConfig[$optionKey] = $config['options'][$optionKey];
-                    if (in_array($optionKey, ['vhost', 'login', 'passcode'])) {
-                        $amqpConfig[$optionKey] = $config['options'][$optionKey];
-                    }
-                }
-            }
-        } else {
+        if (empty($config['options'])) {
             throw new \RuntimeException("Stomp options config does not exist");
         }
-
-        if (!empty($config['amqp'])) {
-            foreach (['host', 'port', 'exchange_name', 'exchange_delay'] as $amqpKey) {
-                if (!empty($config['amqp'][$amqpKey])) {
-                    if ($amqpKey === 'exchange_name' && strpos($config['amqp'][$amqpKey], '/') != false) {
-                        throw new \RuntimeException("exchange name {$config['amqp'][$amqpKey]} cannot contain the / symbol");
-                    }
-                    $amqpConfig[$amqpKey] = $config['amqp'][$amqpKey];
-                } else {
-                    throw new \RuntimeException("Stomp options {$optionKey} config does not exist");
+        foreach (self::$optionsAllowKey as $optionKey) {
+            if (
+                in_array($optionKey, self::$stompOptionRequired)
+                && !array_key_exists($optionKey, $config['options'])
+            ) {
+                // 必传配置没传检查
+                throw new \RuntimeException("Stomp options {$optionKey} config does not exist");
+            } else if (!isset($config['options'][$optionKey])) {
+                // 配置没传
+                continue;
+            } else {
+                $stompConfig[$optionKey] = $config['options'][$optionKey];
+                if (in_array($optionKey, ['vhost', 'login', 'passcode'])) {
+                    $amqpConfig[$optionKey] = $config['options'][$optionKey];
                 }
             }
+        }
 
-            // get namespace
-            $namespacePrefix = [];
-            if (!empty($config['amqp']['namespace'])) {
-                $namespacePrefix[] = $config['amqp']['namespace'];
-            }
-            $namespacePrefix[] = $name;
-            // user custom name + connect name
-            self::$_namespace[$name] = join('.', $namespacePrefix);
-        } else {
+        if (empty($config['amqp'])) {
             throw new \RuntimeException("Amqp config does not exist");
         }
+        foreach (['host', 'port', 'exchange_name', 'exchange_delay'] as $amqpKey) {
+            if (!array_key_exists($amqpKey, $config['amqp'])
+                || empty($config['amqp'][$amqpKey])
+                && $config['amqp'][$amqpKey] !== false
+            ) {
+                throw new \RuntimeException("Stomp options {$amqpKey} config does not exist");
+            }
+            if ($amqpKey === 'exchange_name' && strpos($config['amqp'][$amqpKey], '/') !== false) {
+                throw new \RuntimeException("exchange name {$config['amqp'][$amqpKey]} cannot contain the / symbol");
+            }
+            $amqpConfig[$amqpKey] = $config['amqp'][$amqpKey];
+        }
+
+        // get namespace
+        $namespacePrefix = [];
+        if (!empty($config['amqp']['namespace'])) {
+            $namespacePrefix[] = $config['amqp']['namespace'];
+        }
+        $namespacePrefix[] = $name;
+        // user custom name + connect name
+        self::$_namespace[$name] = join('.', $namespacePrefix);
+
 
         self::$_stompConfig[$name] = $stompConfig;
         self::$_amqpConfig[$name] = $amqpConfig;
