@@ -3,3 +3,4 @@
 /.teones
 composer.lock
 *.log
+/docs
