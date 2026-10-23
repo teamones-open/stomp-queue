@@ -15,7 +15,8 @@
     }
   },
   "scripts": {
-    "test": "php tests/run.php"
+    "test": "php tests/run.php",
+    "test:integration": "php tests/integration.php start && php tests/integration-check.php"
   },
   "config": {
     "sort-packages": true

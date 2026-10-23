@@ -31,6 +31,13 @@ class Client
      */
     public array $packages = [];
 
+    /**
+     * Delays passed to reconnect().
+     *
+     * @var array<int, int>
+     */
+    public array $reconnects = [];
+
     protected int $_state = self::STATE_ESTABLISHED;
 
     /**
@@ -54,6 +61,11 @@ class Client
     public function connect(): void
     {
         // No event loop in unit tests.
+    }
+
+    public function reconnect($after = 0): void
+    {
+        $this->reconnects[] = (int)$after;
     }
 
     public function getState()

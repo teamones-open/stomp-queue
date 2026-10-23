@@ -41,3 +41,50 @@ jobs:
 
       - name: Tests
         run: php -d error_reporting=-1 tests/run.php
+
+  integration:
+    name: Integration (RabbitMQ)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Start RabbitMQ (STOMP + delayed exchange)
+        run: docker compose -f tests/docker-compose.yml up -d --wait
+
+      - name: Wait for STOMP and AMQP
+        run: |
+          for port in 5672 61613; do
+            timeout 60 bash -c "until (echo > /dev/tcp/127.0.0.1/$port) 2>/dev/null; do sleep 1; done"
+          done
+
+      - name: Integration test
+        env:
+          STOMP_HOST: 127.0.0.1
+          STOMP_PORT: '61613'
+          AMQP_HOST: 127.0.0.1
+          AMQP_PORT: '5672'
+          RABBITMQ_USER: stomp
+          RABBITMQ_PASS: stomp
+          RABBITMQ_VHOST: /
+        run: |
+          php -d error_reporting=-1 tests/integration.php start
+          php tests/integration-check.php
+
+      - name: RabbitMQ logs
+        if: failure()
+        run: docker compose -f tests/docker-compose.yml logs --no-color
+
+      - name: Stop RabbitMQ
+        if: always()
+        run: docker compose -f tests/docker-compose.yml down -v

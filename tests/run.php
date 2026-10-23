@@ -21,8 +21,11 @@ set_error_handler(static function (int $severity, string $message, string $file,
 });
 
 require __DIR__ . '/stubs/Workerman/Stomp/Client.php';
+require __DIR__ . '/stubs/Workerman/Stomp/Exception.php';
+require __DIR__ . '/stubs/Workerman/Worker.php';
 require dirname(__DIR__) . '/src/Consumer.php';
 require dirname(__DIR__) . '/src/RetryAbleConsumer.php';
+require dirname(__DIR__) . '/src/Logger.php';
 require dirname(__DIR__) . '/src/AmqpLib/Enforcer.php';
 require dirname(__DIR__) . '/src/StompClient.php';
 require dirname(__DIR__) . '/src/Client.php';
@@ -141,6 +144,46 @@ checkSame(false, \Webman\Stomp\AmqpLib\Enforcer::$_amqpConfig['no_delay']['excha
     'amqp' => ['host' => '127.0.0.1', 'port' => 5672, 'exchange_name' => 'exchange', 'exchange_delay' => true],
 ]);
 check(!isset(\Webman\Stomp\AmqpLib\Enforcer::$_stompConfig['no_debug']['debug']), 'debug is optional');
+
+// topology defaults keep the 0.x behaviour
+checkSame(true, \Webman\Stomp\AmqpLib\Enforcer::$_amqpConfig['default']['queue_durable'], 'queue_durable defaults to true');
+checkSame([], \Webman\Stomp\AmqpLib\Enforcer::$_amqpConfig['default']['queue_arguments'], 'queue_arguments defaults to empty');
+checkSame(true, \Webman\Stomp\AmqpLib\Enforcer::$_amqpConfig['default']['exchange_durable'], 'exchange_durable defaults to true');
+checkSame(false, \Webman\Stomp\AmqpLib\Enforcer::$_amqpConfig['default']['exchange_auto_delete'], 'exchange_auto_delete defaults to false');
+
+\Webman\Stomp\AmqpLib\Enforcer::initConfig('topology', [
+    'host' => 'stomp://127.0.0.1:61613',
+    'options' => ['vhost' => '/', 'login' => 'guest', 'passcode' => 'guest', 'debug' => false],
+    'amqp' => [
+        'host' => '127.0.0.1',
+        'port' => 5672,
+        'exchange_name' => 'exchange',
+        'exchange_delay' => true,
+        'queue_durable' => false,
+        'queue_arguments' => ['x-message-ttl' => 60000],
+        'exchange_durable' => false,
+        'exchange_auto_delete' => true,
+        'exchange_arguments' => ['alternate-exchange' => 'ae'],
+    ],
+]);
+checkSame(false, \Webman\Stomp\AmqpLib\Enforcer::$_amqpConfig['topology']['queue_durable'], 'queue_durable can be disabled');
+checkSame(['x-message-ttl' => 60000], \Webman\Stomp\AmqpLib\Enforcer::$_amqpConfig['topology']['queue_arguments'], 'queue_arguments are kept');
+checkSame(true, \Webman\Stomp\AmqpLib\Enforcer::$_amqpConfig['topology']['exchange_auto_delete'], 'exchange_auto_delete can be enabled');
+checkSame(['alternate-exchange' => 'ae'], \Webman\Stomp\AmqpLib\Enforcer::$_amqpConfig['topology']['exchange_arguments'], 'exchange_arguments are kept');
+
+checkThrows(
+    \RuntimeException::class,
+    static fn() => \Webman\Stomp\AmqpLib\Enforcer::initConfig('bad_topology', [
+        'host' => 'stomp://127.0.0.1',
+        'options' => ['vhost' => '/', 'login' => 'guest', 'passcode' => 'guest'],
+        'amqp' => [
+            'host' => '127.0.0.1', 'port' => 5672, 'exchange_name' => 'exchange',
+            'exchange_delay' => true, 'queue_arguments' => 'not-an-array',
+        ],
+    ]),
+    'non-array queue_arguments is rejected',
+    'queue_arguments'
+);
 
 checkThrows(
     \RuntimeException::class,
@@ -311,6 +354,52 @@ checkSame(
     invokeProtected($process, 'classFromFile', ['D:\\app\\app\\queue\\stomp\\SendSmsConsumer.php', 'D:\\app\\']),
     'consumer class is derived from the file path'
 );
+
+// ---------------------------------------------------------------------------
+// Graceful shutdown and broker errors
+// ---------------------------------------------------------------------------
+
+$processConsumer = new \Webman\Stomp\Process\Consumer('');
+$makeCallback = new \ReflectionMethod($processConsumer, 'makeCallback');
+$countingConsumer = new class implements \Webman\Stomp\Consumer {
+    public int $hits = 0;
+    public $queue = 'it';
+    public $ack = 'client';
+
+    public function consume($data, $ackResolver = null, $client = null)
+    {
+        $this->hits++;
+    }
+};
+$callback = $makeCallback->invoke($processConsumer, $countingConsumer, 'it', 'client');
+
+\Workerman\Worker::$status = \Workerman\Worker::STATUS_RELOADING;
+$callback(null, ['body' => 'x', 'headers' => []], null);
+checkSame(0, $countingConsumer->hits, 'reloading worker does not consume');
+
+\Workerman\Worker::$status = \Workerman\Worker::STATUS_RUNNING;
+$callback(null, ['body' => 'x', 'headers' => []], null);
+checkSame(1, $countingConsumer->hits, 'running worker consumes');
+
+$logs = [];
+\Webman\Stomp\Logger::setHandler(static function (string $message) use (&$logs): void {
+    $logs[] = $message;
+});
+
+$errorConnection = \Webman\Stomp\Client::connection('default');
+$errorStomp = $errorConnection->getClient();
+$errorStomp->setState(\Webman\Stomp\StompClient::STATE_ESTABLISHED);
+$errorStomp->reconnects = [];
+$onError = $errorStomp->onError;
+$onError(new \Workerman\Stomp\Exception('Server cancelled subscription'));
+checkSame(1, count($errorStomp->reconnects), 'broker ERROR triggers a reconnect');
+check(str_contains(implode("\n", $logs), 'Server cancelled subscription'), 'broker ERROR is logged');
+
+$errorStomp->reconnects = [];
+$onError('Connection not established');
+checkSame(0, count($errorStomp->reconnects), 'connection-level error relies on workerman reconnect');
+
+\Webman\Stomp\Logger::setHandler(null);
 
 // ---------------------------------------------------------------------------
 // Result

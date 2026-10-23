@@ -1,0 +1,16 @@
+services:
+  rabbitmq:
+    build: ./docker/rabbitmq
+    environment:
+      # disposable broker for tests; the default guest user is loopback-only
+      RABBITMQ_DEFAULT_USER: stomp
+      RABBITMQ_DEFAULT_PASS: stomp
+    ports:
+      - "${RABBITMQ_AMQP_PORT:-5672}:5672"
+      - "${RABBITMQ_STOMP_PORT:-61613}:61613"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      timeout: 5s
+      retries: 24

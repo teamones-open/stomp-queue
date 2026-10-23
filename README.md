@@ -53,6 +53,12 @@ return [
             // 'login' => '', 'passcode' => '', 'vhost' => '/',
             // optional AMQP timeouts
             // 'connection_timeout' => 3.0, 'read_write_timeout' => 3.0, 'heartbeat' => 0,
+            // optional topology; defaults keep the 0.x behaviour
+            // 'queue_durable' => true,
+            // 'queue_arguments' => ['x-dead-letter-exchange' => 'im.default.dlx', 'x-message-ttl' => 60000],
+            // 'exchange_durable' => true,
+            // 'exchange_auto_delete' => false,
+            // 'exchange_arguments' => [],
         ],
     ],
 ];
@@ -124,6 +130,12 @@ Register the process in `config/process.php`:
   registered twice.
 - A consumer that does not implement `RetryAbleConsumer` still rethrows, keeping
   at-least-once delivery, but the error is logged with its queue and class.
+- Broker `ERROR` frames (for example `Server cancelled subscription` after a queue
+  is deleted) are logged; the client reconnects up to 5 times per 60 seconds so
+  workerman can restore the subscriptions. TCP-level failures keep using
+  workerman's own reconnect logic.
+- During `reload`/`shutdown` the consumer callback stops taking messages and leaves
+  them unacknowledged, so the broker redelivers them instead of losing them.
 - Failures are logged through `support\Log` / `support\bootstrap\Log` when
   available, otherwise through `error_log`.
 
@@ -143,3 +155,20 @@ composer test
 The suite is dependency-free: it stubs the workerman client and converts PHP
 warnings/deprecations into failures, so PHP 8.5 deprecations are caught without a
 broker.
+
+Integration test against a real RabbitMQ (STOMP + delayed message plugin):
+
+```
+docker compose -f tests/docker-compose.yml up -d --wait
+STOMP_HOST=127.0.0.1 STOMP_PORT=61613 AMQP_HOST=127.0.0.1 AMQP_PORT=5672 \
+RABBITMQ_USER=stomp RABBITMQ_PASS=stomp composer test:integration
+docker compose -f tests/docker-compose.yml down -v
+```
+
+The compose file creates a disposable broker with the `stomp` user (the default
+`guest` user is loopback-only). Override `RABBITMQ_AMQP_PORT` /
+`RABBITMQ_STOMP_PORT` if the default ports are already in use.
+
+It declares a delayed exchange and three queues in a unique namespace, then checks
+normal delivery, a 2 second delay, retry-then-success, manual ack and cleanup.
+CI runs it on every push (see `.github/workflows/ci.yml`).

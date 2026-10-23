@@ -7,7 +7,9 @@ namespace Webman\Stomp\Process;
 use Webman\Stomp\AmqpLib\Enforcer;
 use Webman\Stomp\Client;
 use Webman\Stomp\Consumer as ConsumerInterface;
+use Webman\Stomp\Logger;
 use Webman\Stomp\RetryAbleConsumer;
+use Workerman\Worker;
 
 /**
  * Discovers consumer classes, declares the AMQP topology and subscribes over STOMP.
@@ -127,6 +129,12 @@ class Consumer
     protected function makeCallback(object $consumer, string $queue, string $ack): \Closure
     {
         return function ($client, array $package, $ackResolver) use ($consumer, $queue, $ack): void {
+            // Workerman is about to close the connection during reload/shutdown.
+            // Leave the message unacknowledged so the broker redelivers it.
+            if (in_array(Worker::getStatus(), [Worker::STATUS_SHUTDOWN, Worker::STATUS_RELOADING], true)) {
+                return;
+            }
+
             try {
                 \call_user_func([$consumer, 'consume'], $package['body'] ?? '', $ackResolver, $client);
             } catch (\Throwable $e) {
@@ -322,22 +330,6 @@ class Consumer
      */
     protected function logError(string $message, ?\Throwable $exception = null): void
     {
-        $text = '[stomp-queue] ' . $message
-            . ($exception instanceof \Throwable ? ' | ' . $exception::class : '');
-
-        try {
-            if (class_exists(\support\Log::class)) {
-                \support\Log::error($text);
-                return;
-            }
-            if (class_exists(\support\bootstrap\Log::class)) {
-                \support\bootstrap\Log::error($text);
-                return;
-            }
-        } catch (\Throwable) {
-            // Logging backend is not bootstrapped yet; fall back to error_log.
-        }
-
-        error_log($text);
+        Logger::error($message . ($exception instanceof \Throwable ? ' | ' . $exception::class : ''));
     }
 }

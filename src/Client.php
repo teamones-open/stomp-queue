@@ -30,6 +30,22 @@ class Client
     protected StompClient $_client;
 
     /**
+     * Broker ERROR frames seen in the current window.
+     */
+    protected int $_errorCount = 0;
+
+    protected float $_lastErrorAt = 0.0;
+
+    /**
+     * Guard against reconnecting forever on a permanent broker error.
+     */
+    protected static int $maxReconnectsPerWindow = 5;
+
+    protected static int $errorWindowSeconds = 60;
+
+    protected static int $reconnectDelay = 2;
+
+    /**
      * Cap the buffer so a broker outage cannot grow memory without bound.
      */
     protected static int $maxQueueLength = 10000;
@@ -50,6 +66,7 @@ class Client
         $this->_client = new StompClient($config['host'], $config);
         $this->_client->_configName = (string)$name;
         $this->_client->onConnect = function ($client) {
+            $this->_errorCount = 0;
             $this->flushQueue($client);
         };
 
@@ -57,10 +74,16 @@ class Client
         // through onReconnect, so buffered calls must be flushed there as well.
         $previousOnReconnect = $this->_client->onReconnect;
         $this->_client->onReconnect = function ($client) use ($previousOnReconnect) {
+            $this->_errorCount = 0;
             if (is_callable($previousOnReconnect)) {
                 $previousOnReconnect($client);
             }
             $this->flushQueue($client);
+        };
+
+        // Without a handler workerman only echoes broker errors to stdout.
+        $this->_client->onError = function ($error) use ($name) {
+            $this->handleClientError($error, (string)$name);
         };
 
         $this->_client->connect();
@@ -107,6 +130,44 @@ class Client
     public function pendingCount(): int
     {
         return count($this->_queue);
+    }
+
+    /**
+     * Log broker/connection errors and recover from broker ERROR frames.
+     *
+     * Connection-level failures are already retried by workerman's onClose;
+     * an ERROR frame (for example "Server cancelled subscription") leaves the
+     * connection open, so subscriptions have to be restored explicitly.
+     *
+     * @param mixed $error
+     * @param string $name
+     * @return void
+     */
+    protected function handleClientError($error, string $name): void
+    {
+        $message = $error instanceof \Throwable ? $error->getMessage() : (string)$error;
+        Logger::error("connection {$name}: {$message}");
+
+        if (!$error instanceof \Workerman\Stomp\Exception) {
+            return;
+        }
+        if ($this->_client->getState() !== StompClient::STATE_ESTABLISHED) {
+            return;
+        }
+
+        $now = microtime(true);
+        if ($now - $this->_lastErrorAt > static::$errorWindowSeconds) {
+            $this->_errorCount = 0;
+        }
+        $this->_lastErrorAt = $now;
+
+        if (++$this->_errorCount > static::$maxReconnectsPerWindow) {
+            Logger::error("connection {$name}: too many broker errors, auto-reconnect stopped");
+            return;
+        }
+
+        Logger::error("connection {$name}: reconnecting after broker error");
+        $this->_client->reconnect(static::$reconnectDelay);
     }
 
     /**

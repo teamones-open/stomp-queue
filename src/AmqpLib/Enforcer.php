@@ -176,6 +176,12 @@ class Enforcer
             throw new \RuntimeException("exchange name {$amqp['exchange_name']} cannot contain the / symbol");
         }
 
+        foreach (['queue_arguments', 'exchange_arguments'] as $argumentKey) {
+            if (isset($amqp[$argumentKey]) && !is_array($amqp[$argumentKey])) {
+                throw new \RuntimeException("Stomp options {$argumentKey} must be an array");
+            }
+        }
+
         $namespacePrefix = [];
         if (!empty($amqp['namespace']) && is_string($amqp['namespace'])) {
             $namespacePrefix[] = trim($amqp['namespace']);
@@ -189,6 +195,12 @@ class Enforcer
             'port' => $port,
             'exchange_name' => $amqp['exchange_name'],
             'exchange_delay' => (bool)$amqp['exchange_delay'],
+            // Topology defaults keep the 0.x behaviour; all keys are optional.
+            'exchange_durable' => (bool)($amqp['exchange_durable'] ?? true),
+            'exchange_auto_delete' => (bool)($amqp['exchange_auto_delete'] ?? false),
+            'exchange_arguments' => $amqp['exchange_arguments'] ?? [],
+            'queue_durable' => (bool)($amqp['queue_durable'] ?? true),
+            'queue_arguments' => $amqp['queue_arguments'] ?? [],
             // AMQP credentials default to the STOMP ones, but may be overridden
             // when the broker uses different users per protocol.
             'login' => (string)($amqp['login'] ?? $stompConfig['login'] ?? 'guest'),
@@ -241,10 +253,10 @@ class Enforcer
         $amqp = self::amqpConfig($name);
 
         $exchangeType = AMQPExchangeType::DIRECT;
-        $arguments = [];
+        $arguments = $amqp['exchange_arguments'];
         if ($amqp['exchange_delay']) {
             $exchangeType = 'x-delayed-message';
-            $arguments = ['x-delayed-type' => AMQPExchangeType::DIRECT];
+            $arguments['x-delayed-type'] = AMQPExchangeType::DIRECT;
         }
 
         try {
@@ -252,8 +264,8 @@ class Enforcer
                 self::exchangeName($name),
                 $exchangeType,
                 false,
-                true,
-                false,
+                $amqp['exchange_durable'],
+                $amqp['exchange_auto_delete'],
                 false,
                 false,
                 new AMQPTable($arguments)
@@ -285,12 +297,20 @@ class Enforcer
         }
 
         $channel = self::channel($name);
-        self::amqpConfig($name);
+        $amqp = self::amqpConfig($name);
 
         $queue = self::$_namespace[$name] . '.' . $queueName;
         $exchange = self::exchangeName($name);
 
-        $channel->queue_declare($queue, false, true, false, false, false, new AMQPTable([]));
+        $channel->queue_declare(
+            $queue,
+            false,
+            $amqp['queue_durable'],
+            false,
+            false,
+            false,
+            new AMQPTable($amqp['queue_arguments'])
+        );
         $channel->queue_bind($queue, $exchange, $queue);
     }
 
