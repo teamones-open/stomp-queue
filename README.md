@@ -125,9 +125,9 @@ Register the process in `config/process.php`:
 - A consumer that does not implement `RetryAbleConsumer` still rethrows, keeping
   at-least-once delivery, but the error is logged with its queue and class.
 - Broker `ERROR` frames (for example `Server cancelled subscription` after a queue
-  is deleted) are logged; the client reconnects up to 5 times per 60 seconds so
-  workerman can restore the subscriptions. TCP-level failures keep using
-  workerman's own reconnect logic.
+  is deleted) are logged; bursts within 2 seconds are coalesced into one reconnect,
+  and the client reconnects at most 3 times per 60 seconds so workerman can restore
+  the subscriptions. TCP-level failures keep using workerman's own reconnect logic.
 - During `reload`/`shutdown` the consumer callback stops taking messages and leaves
   them unacknowledged, so the broker redelivers them instead of losing them.
 - Failures are logged through `support\Log` / `support\bootstrap\Log` when

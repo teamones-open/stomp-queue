@@ -37,11 +37,19 @@ class Client
     protected float $_lastErrorAt = 0.0;
 
     /**
+     * When the last reconnect was scheduled, used to coalesce ERROR bursts
+     * (one broken queue can produce one ERROR per subscription).
+     */
+    protected float $_lastReconnectAt = 0.0;
+
+    /**
      * Guard against reconnecting forever on a permanent broker error.
      */
-    protected static int $maxReconnectsPerWindow = 5;
+    protected static int $maxReconnectsPerWindow = 3;
 
     protected static int $errorWindowSeconds = 60;
+
+    protected static int $reconnectDebounceSeconds = 2;
 
     protected static int $reconnectDelay = 2;
 
@@ -67,6 +75,7 @@ class Client
         $this->_client->_configName = (string)$name;
         $this->_client->onConnect = function ($client) {
             $this->_errorCount = 0;
+            $this->_lastReconnectAt = 0.0;
             $this->flushQueue($client);
         };
 
@@ -75,6 +84,7 @@ class Client
         $previousOnReconnect = $this->_client->onReconnect;
         $this->_client->onReconnect = function ($client) use ($previousOnReconnect) {
             $this->_errorCount = 0;
+            $this->_lastReconnectAt = 0.0;
             if (is_callable($previousOnReconnect)) {
                 $previousOnReconnect($client);
             }
@@ -161,11 +171,19 @@ class Client
         }
         $this->_lastErrorAt = $now;
 
+        // One incident (for example deleting a queue) yields one ERROR per
+        // subscription; coalesce the burst into a single reconnect.
+        if ($now - $this->_lastReconnectAt < static::$reconnectDebounceSeconds) {
+            Logger::error("connection {$name}: broker error within debounce window, reconnect already scheduled");
+            return;
+        }
+
         if (++$this->_errorCount > static::$maxReconnectsPerWindow) {
             Logger::error("connection {$name}: too many broker errors, auto-reconnect stopped");
             return;
         }
 
+        $this->_lastReconnectAt = $now;
         Logger::error("connection {$name}: reconnecting after broker error");
         $this->_client->reconnect(static::$reconnectDelay);
     }

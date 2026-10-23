@@ -349,11 +349,39 @@ $logs = [];
 $errorConnection = \Webman\Stomp\Client::connection('default');
 $errorStomp = $errorConnection->getClient();
 $errorStomp->setState(\Webman\Stomp\StompClient::STATE_ESTABLISHED);
-$errorStomp->reconnects = [];
 $onError = $errorStomp->onError;
-$onError(new \Workerman\Stomp\Exception('Server cancelled subscription'));
-checkSame(1, count($errorStomp->reconnects), 'broker ERROR triggers a reconnect');
-check(str_contains(implode("\n", $logs), 'Server cancelled subscription'), 'broker ERROR is logged');
+$onConnect = $errorStomp->onConnect;
+$onConnect($errorStomp);
+
+$resetDebounce = static function () use ($errorConnection): void {
+    (new \ReflectionProperty($errorConnection, '_lastReconnectAt'))->setValue($errorConnection, 0.0);
+};
+
+// one broken queue produces one ERROR per subscription: coalesce the burst
+$errorStomp->reconnects = [];
+$onError(new \Workerman\Stomp\Exception('Server cancelled subscription #1'));
+$onError(new \Workerman\Stomp\Exception('Server cancelled subscription #2'));
+$onError(new \Workerman\Stomp\Exception('Server cancelled subscription #3'));
+checkSame(1, count($errorStomp->reconnects), 'ERROR burst is coalesced into one reconnect');
+check(str_contains(implode("\n", $logs), 'Server cancelled subscription #1'), 'broker ERROR is logged');
+check(str_contains(implode("\n", $logs), 'debounce window'), 'coalesced errors are logged');
+
+// four incidents separated by the debounce window: only three reconnects
+$onConnect($errorStomp);
+$errorStomp->reconnects = [];
+for ($i = 1; $i <= 4; $i++) {
+    $resetDebounce();
+    $onError(new \Workerman\Stomp\Exception("incident {$i}"));
+}
+checkSame(3, count($errorStomp->reconnects), 'at most 3 reconnects per 60 seconds');
+check(str_contains(implode("\n", $logs), 'too many broker errors'), 'reconnect cap is logged');
+
+// a successful connect resets the budget
+$onConnect($errorStomp);
+$errorStomp->reconnects = [];
+$resetDebounce();
+$onError(new \Workerman\Stomp\Exception('after connect'));
+checkSame(1, count($errorStomp->reconnects), 'successful connect resets the budget');
 
 $errorStomp->reconnects = [];
 $onError('Connection not established');
