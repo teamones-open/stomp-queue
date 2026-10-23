@@ -34,6 +34,8 @@ composer require teamones/stomp-queue:^3.0
 return [
     'default' => [
         'host' => 'stomp://' . env("rabbitmq_host", '127.0.0.1') . ':' . env("rabbitmq_stomp_port", 61613),
+        // optional: broker ERROR reconnect budget per 60s (default 3)
+        // 'max_reconnects' => 3,
         'options' => [
             'vhost' => env("rabbitmq_vhost", '/'),
             'login' => env("rabbitmq_user", 'guest'),
@@ -126,8 +128,9 @@ Register the process in `config/process.php`:
   at-least-once delivery, but the error is logged with its queue and class.
 - Broker `ERROR` frames (for example `Server cancelled subscription` after a queue
   is deleted) are logged; bursts within 2 seconds are coalesced into one reconnect,
-  and the client reconnects at most 3 times per 60 seconds so workerman can restore
-  the subscriptions. TCP-level failures keep using workerman's own reconnect logic.
+  and the client reconnects at most 3 times per 60 seconds (override with the
+  optional `max_reconnects` key) so workerman can restore the subscriptions.
+  TCP-level failures keep using workerman's own reconnect logic.
 - During `reload`/`shutdown` the consumer callback stops taking messages and leaves
   them unacknowledged, so the broker redelivers them instead of losing them.
 - Failures are logged through `support\Log` / `support\bootstrap\Log` when

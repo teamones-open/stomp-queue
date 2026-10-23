@@ -44,8 +44,9 @@ class Client
 
     /**
      * Guard against reconnecting forever on a permanent broker error.
+     * Override per connection with the optional `max_reconnects` config key.
      */
-    protected static int $maxReconnectsPerWindow = 3;
+    protected int $_maxReconnectsPerWindow = 3;
 
     protected static int $errorWindowSeconds = 60;
 
@@ -143,6 +144,20 @@ class Client
     }
 
     /**
+     * Override the broker-error reconnect budget for this connection.
+     *
+     * @param int $max
+     * @return void
+     */
+    public function setMaxReconnects(int $max): void
+    {
+        if ($max < 1) {
+            throw new \InvalidArgumentException('max reconnects must be a positive integer');
+        }
+        $this->_maxReconnectsPerWindow = $max;
+    }
+
+    /**
      * Log broker/connection errors and recover from broker ERROR frames.
      *
      * Connection-level failures are already retried by workerman's onClose;
@@ -178,7 +193,7 @@ class Client
             return;
         }
 
-        if (++$this->_errorCount > static::$maxReconnectsPerWindow) {
+        if (++$this->_errorCount > $this->_maxReconnectsPerWindow) {
             Logger::error("connection {$name}: too many broker errors, auto-reconnect stopped");
             return;
         }
@@ -237,7 +252,19 @@ class Client
             Enforcer::initConfig($name, $config[$name]);
         }
 
-        return static::$_connections[$name] = new static($name, Enforcer::$_stompConfig[$name]);
+        $maxReconnects = $config[$name]['max_reconnects'] ?? null;
+        if ($maxReconnects !== null && (!is_numeric($maxReconnects) || (int)$maxReconnects < 1)) {
+            throw new \RuntimeException(
+                "Stomp queue connection {$name} max_reconnects must be a positive integer"
+            );
+        }
+
+        $client = new static($name, Enforcer::$_stompConfig[$name]);
+        if ($maxReconnects !== null) {
+            $client->setMaxReconnects((int)$maxReconnects);
+        }
+
+        return static::$_connections[$name] = $client;
     }
 
     /**

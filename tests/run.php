@@ -65,6 +65,40 @@ $GLOBALS['__stomp_test_config'] = [
             'exchange_delay' => false,
         ],
     ],
+    'limited' => [
+        'host' => 'stomp://127.0.0.1:61613',
+        'max_reconnects' => 1,
+        'options' => [
+            'vhost' => '/',
+            'login' => 'guest',
+            'passcode' => 'guest',
+            'debug' => false,
+        ],
+        'amqp' => [
+            'host' => '127.0.0.1',
+            'port' => 5672,
+            'namespace' => 'im',
+            'exchange_name' => 'exchange',
+            'exchange_delay' => true,
+        ],
+    ],
+    'bad_reconnects' => [
+        'host' => 'stomp://127.0.0.1:61613',
+        'max_reconnects' => 0,
+        'options' => [
+            'vhost' => '/',
+            'login' => 'guest',
+            'passcode' => 'guest',
+            'debug' => false,
+        ],
+        'amqp' => [
+            'host' => '127.0.0.1',
+            'port' => 5672,
+            'namespace' => 'im',
+            'exchange_name' => 'exchange',
+            'exchange_delay' => true,
+        ],
+    ],
 ];
 
 function config($name = null, $default = null)
@@ -386,6 +420,42 @@ checkSame(1, count($errorStomp->reconnects), 'successful connect resets the budg
 $errorStomp->reconnects = [];
 $onError('Connection not established');
 checkSame(0, count($errorStomp->reconnects), 'connection-level error relies on workerman reconnect');
+
+// reconnect budget is configurable per connection
+$budgetReader = static function (object $client): int {
+    return (int)(new \ReflectionProperty($client, '_maxReconnectsPerWindow'))->getValue($client);
+};
+checkSame(3, $budgetReader(\Webman\Stomp\Client::connection('default')), 'default max_reconnects is 3');
+
+$limited = \Webman\Stomp\Client::connection('limited');
+checkSame(1, $budgetReader($limited), 'max_reconnects overrides the default');
+
+$limitedStomp = $limited->getClient();
+$limitedStomp->setState(\Webman\Stomp\StompClient::STATE_ESTABLISHED);
+$limitedOnConnect = $limitedStomp->onConnect;
+$limitedOnConnect($limitedStomp);
+$limitedOnError = $limitedStomp->onError;
+$limitedStomp->reconnects = [];
+$resetLimitedDebounce = static function () use ($limited): void {
+    (new \ReflectionProperty($limited, '_lastReconnectAt'))->setValue($limited, 0.0);
+};
+for ($i = 1; $i <= 2; $i++) {
+    $resetLimitedDebounce();
+    $limitedOnError(new \Workerman\Stomp\Exception("limited incident {$i}"));
+}
+checkSame(1, count($limitedStomp->reconnects), 'configured budget limits reconnects');
+
+checkThrows(
+    \InvalidArgumentException::class,
+    static fn() => $limited->setMaxReconnects(0),
+    'setMaxReconnects rejects zero'
+);
+checkThrows(
+    \RuntimeException::class,
+    static fn() => \Webman\Stomp\Client::connection('bad_reconnects'),
+    'invalid max_reconnects is rejected',
+    'max_reconnects'
+);
 
 \Webman\Stomp\Logger::setHandler(null);
 
