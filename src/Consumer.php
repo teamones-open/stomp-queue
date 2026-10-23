@@ -1,25 +1,25 @@
 <?php
-/**
- * This file is part of webman.
- *
- * Licensed under The MIT License
- * For full copyright and license information, please see the MIT-LICENSE.txt
- * Redistributions of files must retain the above copyright notice.
- *
- * @author    walkor<walkor@workerman.net>
- * @copyright walkor<walkor@workerman.net>
- * @link      http://www.workerman.net/
- * @license   http://www.opensource.org/licenses/mit-license.php MIT License
- */
+
+declare(strict_types=1);
 
 namespace Webman\Stomp;
 
-
 /**
- * Interface Consumer
- * @package Webman\Stomp
+ * A consumer class scanned by Process\Consumer.
+ *
+ * Public properties read by the process:
+ *  - string        $queue       queue name (or array of names)
+ *  - string        $connection  connection name from config/stomp.php
+ *  - string        $ack         auto|client|client-individual
+ *  - int           $prefetch    STOMP prefetch-count, defaults to 10
  */
 interface Consumer
 {
+    /**
+     * @param string $data raw message body
+     * @param \Workerman\Stomp\AckResolver|null $ackResolver
+     * @param \Workerman\Stomp\Client|null $client
+     * @return mixed
+     */
     public function consume($data);
 }

@@ -1,24 +1,26 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Webman\Stomp;
 
-
 /**
- * Interface Consumer
- * @package Webman\Stomp
+ * A consumer that controls its own retry policy.
  */
 interface RetryAbleConsumer
 {
     /**
-     * 消息重新消费间隔时间
+     * Retry interval, in seconds.
+     *
      * @return int time to reserve in seconds
      */
     public function getTtr();
 
     /**
-     * 判断消息是否能重复消费
-     * @param int $attempt number
-     * @param \Exception|\Throwable $error from last execute of the job
+     * Whether the message may be consumed again.
+     *
+     * @param int $attempt number of previous attempts
+     * @param \Exception|\Throwable $error error from the last execution
      * @return bool
      */
     public function canRetry($attempt, $error);

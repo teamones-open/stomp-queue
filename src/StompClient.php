@@ -1,28 +1,21 @@
 <?php
-/**
- * This file is part of webman.
- *
- * Licensed under The MIT License
- * For full copyright and license information, please see the MIT-LICENSE.txt
- * Redistributions of files must retain the above copyright notice.
- *
- * @author    walkor<walkor@workerman.net>
- * @copyright walkor<walkor@workerman.net>
- * @link      http://www.workerman.net/
- * @license   http://www.opensource.org/licenses/mit-license.php MIT License
- */
+
+declare(strict_types=1);
 
 namespace Webman\Stomp;
 
-use Workerman\Stomp\Client;
 use Webman\Stomp\AmqpLib\Enforcer;
+use Workerman\Stomp\Client;
 
+/**
+ * STOMP client that maps queue names onto the AMQP topology declared by Enforcer.
+ */
 class StompClient extends Client
 {
     /**
-     * @var string
+     * Connection name from config/stomp.php.
      */
-    public $_configName = '';
+    public string $_configName = '';
 
     public function __construct($address, $options = [])
     {
@@ -30,8 +23,8 @@ class StompClient extends Client
     }
 
     /**
-     * @param $namespace
-     * @param $queueName
+     * @param string $namespace
+     * @param string $queueName
      * @return string
      */
     protected function getQueuePath($namespace, $queueName)
@@ -41,8 +34,8 @@ class StompClient extends Client
     }
 
     /**
-     * @param $name
-     * @param $queueName
+     * @param string $name
+     * @param string $queueName
      * @return string
      */
     protected function getExchangePath($name, $queueName)
@@ -55,26 +48,30 @@ class StompClient extends Client
     }
 
     /**
-     * subscribe
-     * @param $queueName
+     * @param string $queueName
      * @param callable $callback
      * @param array $headers
-     * @return false|mixed|string
+     * @return false|string
      */
     public function subscribe($queueName, $callback, array $headers = [])
     {
         if ($this->checkDisconnecting()) {
             return false;
         }
-        $raw_headers = $headers;
+
+        // On reconnect workerman re-subscribes with the stored headers; short_name
+        // keeps the bare queue name so the destination is not prefixed twice.
+        $queueName = (string)($headers['short_name'] ?? $queueName);
+        unset($headers['short_name']);
+        if ($queueName === '') {
+            throw new \RuntimeException('Stomp queue name cannot be empty');
+        }
+
         $headers['id'] = $headers['id'] ?? $this->createClientId();
         $headers['ack'] = $headers['ack'] ?? 'auto';
-        $subscription = $headers['id'];
+        $subscription = (string)$headers['id'];
 
-        // 处理 queueName重复生成的问题 当stomp连接断开reconnect的时候 destination会重复生成
-        $raw_headers['short_name'] = $queueName = $headers['short_name'] ?? $queueName;
-        $destination = $this->getQueuePath(Enforcer::$_namespace[$this->_configName], $queueName);
-
+        $destination = $this->getQueuePath($this->connectionNamespace(), $queueName);
         $headers['destination'] = $destination;
 
         $package = [
@@ -87,18 +84,17 @@ class StompClient extends Client
         $this->_subscriptions[$subscription] = [
             'ack' => $headers['ack'],
             'callback' => $callback,
-            'headers' => $raw_headers,
+            'headers' => ['short_name' => $queueName] + $headers,
             'destination' => $destination,
         ];
         return $subscription;
     }
 
     /**
-     * @param $queueName
-     * @param $callback
+     * @param string $queueName
+     * @param callable $callback
      * @param array $headers
-     *
-     * @return string
+     * @return false|string
      */
     public function subscribeWithAck($queueName, $callback, array $headers = [])
     {
@@ -106,26 +102,61 @@ class StompClient extends Client
             $headers['ack'] = 'client';
         }
 
-        $destination = $this->getQueuePath(Enforcer::$_namespace[$this->_configName], $queueName);
-
-        return $this->subscribe($destination, $callback, $headers);
+        // subscribe() owns the destination building; passing a built destination
+        // here used to prefix the queue name twice.
+        return $this->subscribe($queueName, $callback, $headers);
     }
 
     /**
-     * @param $queueName
-     * @param $body
-     * @param int $delay 单位是秒
+     * @param string $queueName
+     * @return bool
+     */
+    public function hasSubscriptionForQueue($queueName): bool
+    {
+        $queueName = (string)$queueName;
+        if ($queueName === '' || $this->_configName === '' || !isset(Enforcer::$_namespace[$this->_configName])) {
+            return false;
+        }
+        $destination = $this->getQueuePath(Enforcer::$_namespace[$this->_configName], $queueName);
+        foreach ($this->_subscriptions as $subscription) {
+            if (($subscription['destination'] ?? null) === $destination) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param string $queueName
+     * @param string $body message body, must already be serialized
+     * @param int $delay delay in seconds, requires amqp.exchange_delay
      * @param array $headers
+     * @return void
      */
     public function send($queueName, $body, $delay = 0, array $headers = [])
     {
-        // generate destination
+        if (!is_string($queueName) || $queueName === '') {
+            throw new \RuntimeException('Stomp queue name cannot be empty');
+        }
+        if (!is_string($body)) {
+            if (is_scalar($body) || $body instanceof \Stringable) {
+                $body = (string)$body;
+            } else {
+                throw new \InvalidArgumentException('Stomp message body must be a string');
+            }
+        }
+
+        $delay = (int)$delay;
         if ($delay > 0) {
+            if (empty($this->amqpConfig()['exchange_delay'])) {
+                throw new \RuntimeException(
+                    "Delayed messages require amqp.exchange_delay=true on connection {$this->_configName}"
+                );
+            }
             $headers['x-delay'] = $delay * 1000;
         }
 
         $headers['destination'] = $this->getExchangePath($this->_configName, $queueName);
-
         $headers['content-length'] = strlen($body);
         if (!isset($headers['content-type'])) {
             $headers['content-type'] = 'text/plain';
@@ -138,5 +169,27 @@ class StompClient extends Client
         ];
 
         $this->sendPackage($package);
+    }
+
+    /**
+     * @return string
+     */
+    protected function connectionNamespace(): string
+    {
+        if ($this->_configName === '' || !isset(Enforcer::$_namespace[$this->_configName])) {
+            throw new \RuntimeException('Stomp connection is not initialized');
+        }
+        return Enforcer::$_namespace[$this->_configName];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function amqpConfig(): array
+    {
+        if (!isset(Enforcer::$_amqpConfig[$this->_configName])) {
+            throw new \RuntimeException("Stomp connection {$this->_configName} is not initialized");
+        }
+        return Enforcer::$_amqpConfig[$this->_configName];
     }
 }

@@ -1,88 +1,141 @@
 <?php
-/**
- * This file is part of webman.
- *
- * Licensed under The MIT License
- * For full copyright and license information, please see the MIT-LICENSE.txt
- * Redistributions of files must retain the above copyright notice.
- *
- * @author    walkor<walkor@workerman.net>
- * @copyright walkor<walkor@workerman.net>
- * @link      http://www.workerman.net/
- * @license   http://www.opensource.org/licenses/mit-license.php MIT License
- */
+
+declare(strict_types=1);
 
 namespace Webman\Stomp;
 
 use Webman\Stomp\AmqpLib\Enforcer;
 
 /**
- * Class Stomp
- * @package support
+ * Static entry point of the STOMP queue.
  *
  * Strings methods
- * @method static mixed subscribe(string $queueName, callback $callback, array $headers = [])
+ * @method static mixed subscribe(string $queueName, callable $callback, array $headers = [])
  * @method static void send(string $queueName, $body, int $delay = 0, array $headers = [])
  */
 class Client
 {
-
     /**
-     * @var Client[]
+     * @var array<string, Client>|null
      */
-    protected static $_connections = null;
+    protected static ?array $_connections = null;
 
     /**
-     * @var array
+     * Calls buffered until the STOMP connection is established.
+     *
+     * @var array<int, array{0: string, 1: array}>
      */
-    protected $_queue = [];
+    protected array $_queue = [];
+
+    protected StompClient $_client;
 
     /**
-     * @var StompClient
+     * Cap the buffer so a broker outage cannot grow memory without bound.
      */
-    protected $_client;
-
+    protected static int $maxQueueLength = 10000;
 
     /**
-     * @param $name
+     * @var string[]
+     */
+    protected static array $queueableMethods = [
+        'subscribe', 'subscribeWithAck', 'unsubscribe', 'send', 'ack', 'nack', 'disconnect',
+    ];
+
+    /**
+     * @param string $name
      * @param array $config
      */
     public function __construct($name, $config = [])
     {
         $this->_client = new StompClient($config['host'], $config);
-        $this->_client->_configName = $name;
+        $this->_client->_configName = (string)$name;
         $this->_client->onConnect = function ($client) {
-            foreach ($this->_queue as $item) {
-                $client->{$item[0]}(... $item[1]);
-            }
-            $this->_queue = [];
+            $this->flushQueue($client);
         };
+
+        // workerman re-subscribes known destinations on reconnect and reports it
+        // through onReconnect, so buffered calls must be flushed there as well.
+        $previousOnReconnect = $this->_client->onReconnect;
+        $this->_client->onReconnect = function ($client) use ($previousOnReconnect) {
+            if (is_callable($previousOnReconnect)) {
+                $previousOnReconnect($client);
+            }
+            $this->flushQueue($client);
+        };
+
         $this->_client->connect();
     }
 
     /**
-     * @param $name
-     * @param $arguments
-     *
+     * @param string $name
+     * @param array $arguments
      * @return mixed
      */
     public function __call($name, $arguments)
     {
-        if ($this->_client->getState() != StompClient::STATE_ESTABLISHED) {
-            if (in_array($name, [
-                'subscribe',
-                'subscribeWithAck',
-                'unsubscribe',
-                'send',
-                'ack',
-                'nack',
-                'disconnect'])) {
-                $this->_queue[] = [$name, $arguments];
-                
-                return null;
+        if (
+            $this->_client->getState() !== StompClient::STATE_ESTABLISHED
+            && in_array($name, static::$queueableMethods, true)
+        ) {
+            if (count($this->_queue) >= static::$maxQueueLength) {
+                throw new \RuntimeException(
+                    "Stomp queue buffer is full ({$this->_client->_configName}), message not queued"
+                );
             }
+            $this->_queue[] = [$name, $arguments];
+
+            return null;
         }
         return $this->_client->{$name}(...$arguments);
+    }
+
+    /**
+     * Underlying STOMP client, mainly for health checks.
+     *
+     * @return StompClient
+     */
+    public function getClient(): StompClient
+    {
+        return $this->_client;
+    }
+
+    /**
+     * Number of calls waiting for an established connection.
+     *
+     * @return int
+     */
+    public function pendingCount(): int
+    {
+        return count($this->_queue);
+    }
+
+    /**
+     * Replay buffered calls once the connection is usable again.
+     *
+     * @param StompClient $client
+     * @return void
+     */
+    protected function flushQueue(StompClient $client): void
+    {
+        if ($this->_queue === []) {
+            return;
+        }
+
+        $queue = $this->_queue;
+        $this->_queue = [];
+
+        foreach ($queue as [$method, $arguments]) {
+            // A re-subscribe is already replayed by workerman; replaying the
+            // buffered subscribe would register a second subscription id.
+            if (
+                ($method === 'subscribe' || $method === 'subscribeWithAck')
+                && isset($arguments[0])
+                && $client->hasSubscriptionForQueue($arguments[0])
+            ) {
+                continue;
+            }
+            $client->{$method}(...$arguments);
+        }
     }
 
     /**
@@ -91,30 +144,44 @@ class Client
      */
     public static function connection($name = 'default')
     {
-        if (!isset(static::$_connections[$name])) {
-
-            $config = config('stomp', []);
-            if (!isset($config[$name])) {
-                throw new \RuntimeException("Stomp Queue connection $name not found");
-            }
-
-            if (!isset(Enforcer::$_stompConfig[$name])) {
-                Enforcer::initConfig($name, $config[$name]);
-            }
-
-            $client = new static($name, Enforcer::$_stompConfig[$name]);
-            static::$_connections[$name] = $client;
+        $name = (string)$name;
+        if (isset(static::$_connections[$name])) {
+            return static::$_connections[$name];
         }
-        return static::$_connections[$name];
+
+        $config = static::readConfig();
+        if (!isset($config[$name]) || !is_array($config[$name])) {
+            throw new \RuntimeException("Stomp queue connection {$name} not found");
+        }
+
+        if (!isset(Enforcer::$_stompConfig[$name])) {
+            Enforcer::initConfig($name, $config[$name]);
+        }
+
+        return static::$_connections[$name] = new static($name, Enforcer::$_stompConfig[$name]);
     }
 
     /**
-     * @param $name
-     * @param $arguments
+     * @param string $name
+     * @param array $arguments
      * @return mixed
      */
     public static function __callStatic($name, $arguments)
     {
         return static::connection('default')->{$name}(... $arguments);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected static function readConfig(): array
+    {
+        if (!function_exists('config')) {
+            throw new \RuntimeException(
+                'config() is not available; call Client::connection() inside webman or initialize Enforcer manually'
+            );
+        }
+        $config = config('stomp', []);
+        return is_array($config) ? $config : [];
     }
 }
