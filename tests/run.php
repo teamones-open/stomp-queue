@@ -145,46 +145,6 @@ checkSame(false, \Webman\Stomp\AmqpLib\Enforcer::$_amqpConfig['no_delay']['excha
 ]);
 check(!isset(\Webman\Stomp\AmqpLib\Enforcer::$_stompConfig['no_debug']['debug']), 'debug is optional');
 
-// topology defaults keep the 0.x behaviour
-checkSame(true, \Webman\Stomp\AmqpLib\Enforcer::$_amqpConfig['default']['queue_durable'], 'queue_durable defaults to true');
-checkSame([], \Webman\Stomp\AmqpLib\Enforcer::$_amqpConfig['default']['queue_arguments'], 'queue_arguments defaults to empty');
-checkSame(true, \Webman\Stomp\AmqpLib\Enforcer::$_amqpConfig['default']['exchange_durable'], 'exchange_durable defaults to true');
-checkSame(false, \Webman\Stomp\AmqpLib\Enforcer::$_amqpConfig['default']['exchange_auto_delete'], 'exchange_auto_delete defaults to false');
-
-\Webman\Stomp\AmqpLib\Enforcer::initConfig('topology', [
-    'host' => 'stomp://127.0.0.1:61613',
-    'options' => ['vhost' => '/', 'login' => 'guest', 'passcode' => 'guest', 'debug' => false],
-    'amqp' => [
-        'host' => '127.0.0.1',
-        'port' => 5672,
-        'exchange_name' => 'exchange',
-        'exchange_delay' => true,
-        'queue_durable' => false,
-        'queue_arguments' => ['x-message-ttl' => 60000],
-        'exchange_durable' => false,
-        'exchange_auto_delete' => true,
-        'exchange_arguments' => ['alternate-exchange' => 'ae'],
-    ],
-]);
-checkSame(false, \Webman\Stomp\AmqpLib\Enforcer::$_amqpConfig['topology']['queue_durable'], 'queue_durable can be disabled');
-checkSame(['x-message-ttl' => 60000], \Webman\Stomp\AmqpLib\Enforcer::$_amqpConfig['topology']['queue_arguments'], 'queue_arguments are kept');
-checkSame(true, \Webman\Stomp\AmqpLib\Enforcer::$_amqpConfig['topology']['exchange_auto_delete'], 'exchange_auto_delete can be enabled');
-checkSame(['alternate-exchange' => 'ae'], \Webman\Stomp\AmqpLib\Enforcer::$_amqpConfig['topology']['exchange_arguments'], 'exchange_arguments are kept');
-
-checkThrows(
-    \RuntimeException::class,
-    static fn() => \Webman\Stomp\AmqpLib\Enforcer::initConfig('bad_topology', [
-        'host' => 'stomp://127.0.0.1',
-        'options' => ['vhost' => '/', 'login' => 'guest', 'passcode' => 'guest'],
-        'amqp' => [
-            'host' => '127.0.0.1', 'port' => 5672, 'exchange_name' => 'exchange',
-            'exchange_delay' => true, 'queue_arguments' => 'not-an-array',
-        ],
-    ]),
-    'non-array queue_arguments is rejected',
-    'queue_arguments'
-);
-
 checkThrows(
     \RuntimeException::class,
     static fn() => \Webman\Stomp\AmqpLib\Enforcer::initConfig('bad', ['options' => [], 'amqp' => []]),

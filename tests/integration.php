@@ -64,8 +64,6 @@ $GLOBALS['IT_CONFIG'] = [
             'exchange_delay' => true,
             'connection_timeout' => 5.0,
             'read_write_timeout' => 10.0,
-            // exercises the configurable topology arguments
-            'queue_arguments' => ['x-message-ttl' => 60000],
         ],
     ],
 ];

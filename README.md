@@ -53,12 +53,6 @@ return [
             // 'login' => '', 'passcode' => '', 'vhost' => '/',
             // optional AMQP timeouts
             // 'connection_timeout' => 3.0, 'read_write_timeout' => 3.0, 'heartbeat' => 0,
-            // optional topology; defaults keep the 0.x behaviour
-            // 'queue_durable' => true,
-            // 'queue_arguments' => ['x-dead-letter-exchange' => 'im.default.dlx', 'x-message-ttl' => 60000],
-            // 'exchange_durable' => true,
-            // 'exchange_auto_delete' => false,
-            // 'exchange_arguments' => [],
         ],
     ],
 ];
